@@ -11,6 +11,7 @@
 
 namespace CachetHQ\Cachet\Integrations;
 
+use Exception;
 use GuzzleHttp\Client;
 use Illuminate\Contracts\Cache\Repository;
 
@@ -27,6 +28,13 @@ class Feed
      * @var string
      */
     const URL = 'https://blog.alt-three.com/tag/cachet/rss';
+
+    /**
+     * The failed status indicator.
+     *
+     * @var int
+     */
+    const FAILED = 1;
 
     /**
      * The cache repository instance.
@@ -57,18 +65,24 @@ class Feed
     }
 
     /**
-     * Returns the entries.
+     * Returns the latest entries.
      *
-     * @return array
+     * @return array|null
      */
-    public function entries()
+    public function latest()
     {
-        return $this->cache->remember('feeds', 2880, function () {
-            $xml = simplexml_load_string((new Client())->get($this->url, [
-                'headers' => ['Accept' => 'application/rss+xml', 'User-Agent' => defined('CACHET_VERSION') ? 'cachet/'.constant('CACHET_VERSION') : 'cachet'],
-            ])->getBody()->getContents(), null, LIBXML_NOCDATA);
+        $result = $this->cache->remember('feeds', 720, function () {
+            try {
+                $xml = simplexml_load_string((new Client())->get($this->url, [
+                    'headers' => ['Accept' => 'application/rss+xml', 'User-Agent' => defined('CACHET_VERSION') ? 'cachet/'.constant('CACHET_VERSION') : 'cachet'],
+                ])->getBody()->getContents(), null, LIBXML_NOCDATA);
 
-            return json_decode(json_encode($xml));
+                return json_decode(json_encode($xml));
+            } catch (Exception $e) {
+                return self::FAILED;
+            }
         });
+
+        return $result === self::FAILED ? null : $result;
     }
 }
