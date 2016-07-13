@@ -22,38 +22,100 @@ class MySqlRepository implements MetricInterface
      * Returns metrics for the last hour.
      *
      * @param \CachetHQ\Cachet\Models\Metric $metric
-     * @param int                            $hour
-     * @param int                            $minute
+     * @param \DateTime $milestone
      *
      * @return int
      */
-    public function getPointsLastHour(Metric $metric, $hour, $minute)
+    public function getPointsLastHour(Metric $metric, \DateTime $milestone)
     {
-        $dateTime = (new Date())->sub(new DateInterval('PT'.$hour.'H'))->sub(new DateInterval('PT'.$minute.'M'));
-        $timeInterval = $dateTime->format('YmdHi');
-
         if (!isset($metric->calc_type) || $metric->calc_type == Metric::CALC_SUM) {
             $queryType = 'SUM(mp.`value` * mp.`counter`) AS `value`';
         } elseif ($metric->calc_type == Metric::CALC_AVG) {
             $queryType = 'AVG(mp.`value` * mp.`counter`) AS `value`';
         }
 
-        $value = 0;
+        $sql = <<<SQL_FRAGMENT
+        SELECT DATE_FORMAT(mp.`created_at`, '%H:%i') AS pointKey, {$queryType} 
+        FROM metrics m
+            INNER JOIN metric_points mp ON m.id = mp.metric_id
+        WHERE m.id = :metricId 
+            AND DATE_SUB(:milestone, INTERVAL 61 MINUTE) <= mp.`created_at`
+        GROUP BY HOUR(mp.`created_at`), MINUTE(mp.`created_at`)
+        LIMIT 1, 61
+SQL_FRAGMENT;
 
-        $points = DB::select("SELECT {$queryType} FROM metrics m INNER JOIN metric_points mp ON m.id = mp.metric_id WHERE m.id = :metricId AND DATE_FORMAT(mp.`created_at`, '%Y%m%d%H%i') = :timeInterval GROUP BY HOUR(mp.`created_at`), MINUTE(mp.`created_at`)", [
-            'metricId'     => $metric->id,
-            'timeInterval' => $timeInterval,
-        ]);
+        return DB::select($sql,
+            [
+                'metricId' => $metric->id,
+                'milestone' => $milestone->format('Y-m-d H:i')
+            ]
+        );
 
-        if (isset($points[0]) && !($value = $points[0]->value)) {
-            $value = 0;
+
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getPointsForLastXHours(Metric $metric, \DateTime $milestone, $hours = 0)
+    {
+        if (!isset($metric->calc_type) || $metric->calc_type == Metric::CALC_SUM) {
+            $queryType = 'SUM(mp.`value` * mp.`counter`) AS `value`';
+        } elseif ($metric->calc_type == Metric::CALC_AVG) {
+            $queryType = 'AVG(mp.`value` * mp.`counter`) AS `value`';
         }
 
-        if ($value === 0 && $metric->default_value != $value) {
-            return $metric->default_value;
+        $sql = <<<SQL_FRAGMENT
+        SELECT DATE_FORMAT(mp.`created_at`, '%H:00') AS pointKey, {$queryType} FROM metrics m
+            INNER JOIN metric_points mp ON m.id = mp.metric_id
+            WHERE m.id = :metricId
+                AND DATE_SUB(:milestone, INTERVAL :hours HOUR) <= mp.`created_at`
+        GROUP BY HOUR(mp.`created_at`)
+        LIMIT 1, :hoursLimit           
+SQL_FRAGMENT;
+
+        $hours++;
+
+        return DB::select(
+            $sql,
+            [
+                'metricId'   => $metric->id,
+                'milestone' => $milestone->format('Y-m-d H:i:s'),
+                'hours'      => $hours,
+                'hoursLimit' => $hours
+            ]);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getPointsForLastXDays(Metric $metric, \DateTime $milestone, $days = 0)
+    {
+        if (!isset($metric->calc_type) || $metric->calc_type == Metric::CALC_SUM) {
+            $queryType = 'SUM(mp.`value` * mp.`counter`) AS `value`';
+        } elseif ($metric->calc_type == Metric::CALC_AVG) {
+            $queryType = 'AVG(mp.`value` * mp.`counter`) AS `value`';
         }
 
-        return round($value, $metric->places);
+        $sql = <<<SQL_FRAGMENT
+SELECT DATE_FORMAT(mp.`created_at`, '%a %D %b') AS pointKey, AVG(mp.`value` * mp.`counter`) AS `value` FROM metrics m
+  INNER JOIN metric_points mp ON m.id = mp.metric_id
+WHERE m.id = :metricId
+      AND DATE_SUB(:milestone, INTERVAL :days DAY) <= mp.`created_at`
+GROUP BY DATE_FORMAT(mp.`created_at`, '%a %D %b')
+LIMIT 1, :daysLimit
+SQL_FRAGMENT;
+
+        $days++;
+
+        return DB::select(
+            $sql,
+            [
+                'metricId'  => $metric->id,
+                'milestone' => $milestone,
+                'days'      => $days,
+                'daysLimit' => $days
+            ]);
     }
 
     /**

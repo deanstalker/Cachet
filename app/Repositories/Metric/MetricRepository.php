@@ -55,17 +55,31 @@ class MetricRepository
     public function listPointsLastHour(Metric $metric)
     {
         $dateTime = $this->dates->make();
+        $milestone = $this->dates->make();
 
-        $points = [];
+        $dateTime = new \DateTime('2016-06-07 09:00');
+        $milestone = new \DateTime('2016-06-07 09:00');
 
-        $pointKey = $dateTime->format('H:i');
 
-        for ($i = 0; $i <= 60; $i++) {
-            $points[$pointKey] = $this->repository->getPointsLastHour($metric, 0, $i);
+        $defaultPoints = [
+            $dateTime->format('H:i') => round($metric->default_value, $metric->places)
+        ];
+
+        for ($i = 0; $i <= 59; $i++) {
             $pointKey = $dateTime->sub(new DateInterval('PT1M'))->format('H:i');
+            $defaultPoints[$pointKey] = round($metric->default_value, $metric->places);
         }
 
-        return array_reverse($points);
+        $points = $this->repository->getPointsLastHour($metric, $milestone);
+        if (count($points) > 0) {
+            foreach ($points as $point) {
+                if (isset($defaultPoints[$point->pointKey])) {
+                    $defaultPoints[$point->pointKey] = round($point->value, $metric->places);
+                }
+            }
+        }
+
+        return array_reverse($defaultPoints);
     }
 
     /**
@@ -79,17 +93,27 @@ class MetricRepository
     public function listPointsToday(Metric $metric, $hours = 12)
     {
         $dateTime = $this->dates->make();
-
-        $points = [];
-
-        $pointKey = $dateTime->format('H:00');
+        $milestone = $this->dates->make();
+        
+        $defaultPoints = [
+          $dateTime->format('H:00') => round($metric->default_value, $metric->places)
+        ];
 
         for ($i = 0; $i <= $hours; $i++) {
-            $points[$pointKey] = $this->repository->getPointsByHour($metric, $i);
             $pointKey = $dateTime->sub(new DateInterval('PT1H'))->format('H:00');
+            $defaultPoints[$pointKey] = round($metric->default_value, $metric->places);
         }
 
-        return array_reverse($points);
+        $points = $this->repository->getPointsForLastXHours($metric, $milestone, $hours);
+        if (count($points) > 0) {
+            foreach ($points as $point) {
+                if (isset($defaultPoints[$point->pointKey])) {
+                    $defaultPoints[$point->pointKey] = round($point->value, $metric->places);
+                }
+            }
+        }
+
+        return array_reverse($defaultPoints);
     }
 
     /**
@@ -102,17 +126,27 @@ class MetricRepository
     public function listPointsForWeek(Metric $metric)
     {
         $dateTime = $this->dates->make();
+        $milestone = $this->dates->make();
 
-        $points = [];
-
-        $pointKey = $dateTime->format('D jS M');
+        $defaultPoints = [
+            $dateTime->format('D jS M') => round($metric->default_value, $metric->places)
+        ];
 
         for ($i = 0; $i <= 7; $i++) {
-            $points[$pointKey] = $this->repository->getPointsForDayInWeek($metric, $i);
             $pointKey = $dateTime->sub(new DateInterval('P1D'))->format('D jS M');
+            $defaultPoints[$pointKey] = round($metric->default_value, $metric->places);
         }
 
-        return array_reverse($points);
+        $points = $this->repository->getPointsForLastXDays($metric, $milestone, 7);
+        if (count($points) > 0) {
+            foreach ($points as $point) {
+                if (isset($defaultPoints[$point->pointKey])) {
+                    $defaultPoints[$point->pointKey] = round($point->value, $metric->places);
+                }
+            }
+        }
+
+        return array_reverse($defaultPoints);
     }
 
     /**
@@ -125,18 +159,28 @@ class MetricRepository
     public function listPointsForMonth(Metric $metric)
     {
         $dateTime = $this->dates->make();
+        $milestone = $this->dates->make();
 
         $daysInMonth = $dateTime->format('t');
 
-        $points = [];
-
-        $pointKey = $dateTime->format('jS M');
+        $defaultPoints = [
+            $dateTime->format('D jS M') => round($metric->default_value, $metric->places)
+        ];
 
         for ($i = 0; $i <= $daysInMonth; $i++) {
-            $points[$pointKey] = $this->repository->getPointsForDayInWeek($metric, $i);
-            $pointKey = $dateTime->sub(new DateInterval('P1D'))->format('jS M');
+            $pointKey = $dateTime->sub(new DateInterval('P1D'))->format('D jS M');
+            $defaultPoints[$pointKey] = round($metric->default_value, $metric->places);
         }
 
-        return array_reverse($points);
+        $points = $this->repository->getPointsForLastXDays($metric, $milestone, $daysInMonth);
+        if (count($points) > 0) {
+            foreach ($points as $point) {
+                if (isset($defaultPoints[$point->pointKey])) {
+                    $defaultPoints[$point->pointKey] = round($point->value, $metric->places);
+                }
+            }
+        }
+
+        return array_reverse($defaultPoints);
     }
 }

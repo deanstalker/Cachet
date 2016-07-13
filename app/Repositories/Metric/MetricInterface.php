@@ -19,12 +19,33 @@ interface MetricInterface
      * Returns metrics for the last hour.
      *
      * @param \CachetHQ\Cachet\Models\Metric $metric
-     * @param int                            $hour
-     * @param int                            $minute
+     * @paran \DateTime $milestone
      *
-     * @return int
+     * @return array
      */
-    public function getPointsLastHour(Metric $metric, $hour, $minute);
+    public function getPointsLastHour(Metric $metric, \DateTime $milestone);
+
+    /**
+     * Returns metrics for the last (x) hours
+     *
+     * @param Metric    $metric
+     * @param \DateTime $milestone
+     * @param int       $hours
+     *
+     * @return mixed
+     */
+    public function getPointsForLastXHours(Metric $metric, \DateTime $milestone, $hours = 0);
+
+    /**
+     * Returns metrics for the last (x) days
+     *
+     * @param Metric    $metric
+     * @param \DateTime $milestone
+     * @param int       $days
+     *
+     * @return mixed
+     */
+    public function getPointsForLastXDays(Metric $metric, \DateTime $milestone, $days = 0);
 
     /**
      * Returns metrics for a given hour.

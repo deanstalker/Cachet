@@ -18,43 +18,74 @@ use Jenssegers\Date\Date;
 
 class SqliteRepository implements MetricInterface
 {
+    public function getPointsForLastXDays(Metric $metric, \DateTime $milestone, $days = 0)
+    {
+        
+    }
+
     /**
      * Returns metrics for the last hour.
      *
      * @param \CachetHQ\Cachet\Models\Metric $metric
-     * @param int                            $hour
-     * @param int                            $minute
+     * @param \DateTime $milestone
      *
      * @return int
      */
-    public function getPointsLastHour(Metric $metric, $hour, $minute)
+    public function getPointsLastHour(Metric $metric, \DateTime $milestone)
     {
-        $dateTime = (new Date())->sub(new DateInterval('PT'.$hour.'H'))->sub(new DateInterval('PT'.$minute.'M'));
-
-        // Default metrics calculations.
         if (!isset($metric->calc_type) || $metric->calc_type == Metric::CALC_SUM) {
-            $queryType = 'sum(metric_points.value * metric_points.counter)';
+            $queryType = 'SUM(metric_points.`value` * metric_points.`counter`) AS `value`';
         } elseif ($metric->calc_type == Metric::CALC_AVG) {
-            $queryType = 'avg(metric_points.value * metric_points.counter)';
-        } else {
-            $queryType = 'sum(metric_points.value * metric_points.counter)';
+            $queryType = 'AVG(metric_points.`value` * metric_points.`counter`) AS `value`';
         }
 
-        $value = 0;
-        $query = DB::select("select {$queryType} as value FROM metrics JOIN metric_points ON metric_points.metric_id = metrics.id WHERE metrics.id = :metricId AND strftime('%Y%m%d%H%M', metric_points.created_at) = :timeInterval GROUP BY strftime('%H%M', metric_points.created_at)", [
-            'metricId'     => $metric->id,
-            'timeInterval' => $dateTime->format('YmdHi'),
-        ]);
+        $sql = <<<SQL_FRAGMENT
+        SELECT strftime('%H:%M', metric_points.created_at) AS pointKey, {$queryType} 
+        FROM metrics
+            INNER JOIN metric_points ON metrics.id = metric_points.metric_id
+        WHERE metrics.id = :metricId 
+            AND datetime(:milestone, '-61 minute') <= metric_points.created_at            
+        GROUP BY strftime('%H', metric_points.created_at), strftime('%M', metric_points.created_at)
+        LIMIT 61 OFFSET 1
+SQL_FRAGMENT;
 
-        if (isset($query[0])) {
-            $value = $query[0]->value;
+        return DB::select($sql,
+            [
+                'metricId' => $metric->id,
+                'milestone' => $milestone->format('Y-m-d H:i')
+            ]
+        );
+
+    }
+
+    public function getPointsForLastXHours(Metric $metric, \DateTime $milestone, $hours = 0)
+    {
+        if (!isset($metric->calc_type) || $metric->calc_type == Metric::CALC_SUM) {
+            $queryType = 'SUM(metric_points.value * metric_points.counter) AS `value`';
+        } elseif ($metric->calc_type == Metric::CALC_AVG) {
+            $queryType = 'AVG(metric_points.value * metric_points.counter) AS value';
         }
 
-        if ($value === 0 && $metric->default_value != $value) {
-            return $metric->default_value;
-        }
+        $sql = <<<SQL_FRAGMENT
+        SELECT strftime('%H:00', metric_points.created_at) AS pointKey, {$queryType} 
+        FROM metrics 
+            INNER JOIN metric_points ON metrics.id = metric_points.metric_id
+            WHERE metrics.id = :metricId
+                AND datetime(:milestone, '-:hours HOUR') <= metric_points.`created_at`
+        GROUP BY strftime('%H', metric_points.created_at)
+        LIMIT :hoursLimit OFFSET 1           
+SQL_FRAGMENT;
 
-        return round($value, $metric->places);
+        $hours++;
+
+        return DB::select(
+            $sql,
+            [
+                'metricId'   => $metric->id,
+                'milestone'  => $milestone->format('Y-m-d H:i:s'),
+                'hours'      => $hours,
+                'hoursLimit' => $hours
+            ]);
     }
 
     /**
